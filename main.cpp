@@ -10,6 +10,7 @@
 #include "button.h"
 #include "color.h"
 #include "history.h"
+#include "dynamic2DArray.h"
 
 
 #define double long double  // for greater precision
@@ -17,7 +18,7 @@
 using namespace std ;
 
 
-const double E = 2.71828182845904523536;
+//const double E = 2.71828182845904523536;
 int MAX_ITER = 1000 ;
 int N = 500 ;
 double ZOOM_IN_FACTOR = 1.5 ;
@@ -30,10 +31,7 @@ const double SIZE = 2000 ;
 const double OPTIONS_SIZE = 700 ;
 const double OPTIONS_CENTRE = SIZE + OPTIONS_SIZE/2 ;
 
-
-RGB pixel_data[2000][2000] ;
-
-
+Dynamic2DArray dynamic2dArray(N) ;
 
 // Calculating the number of iterations z = z^2 + z0 to estimate color at point
 double count_iterations (double x0, double y0) {
@@ -42,7 +40,8 @@ double count_iterations (double x0, double y0) {
     double n = 0 ;
     double xtemp ;
     
-    while (x*x + y*y <= 1<<20 and n < MAX_ITER) {
+//    2^8 is the bailout radius
+    while (x*x + y*y <= 1<<16 and n < MAX_ITER) {
         xtemp = x*x-y*y + x0;
         y = 2*x*y + y0;
         x = xtemp ;
@@ -63,7 +62,8 @@ void draw_image(sf::RenderWindow &window) {
     
     for (int i = 0; i<N; i++) {
         for (int j = 0; j<N; j++) {
-            RGB rgb = pixel_data[i][j] ;
+
+            RGB rgb = dynamic2dArray.getData(i, j) ;
             
             sf::RectangleShape r ;
             r.setPosition(i * SIZE/N, j * SIZE/N) ;
@@ -72,8 +72,6 @@ void draw_image(sf::RenderWindow &window) {
             
             window.draw(r);
         }
-        
-//        window.display() ;
         
     }
     
@@ -96,14 +94,14 @@ void store_pixel_data(double X, double Y, double sz) {
             int value = 0 ;
             if (m < MAX_ITER) value = 100 ;
             
-            pixel_data[i][j] = HSVtoRGB(hue, saturation, value) ;
+            dynamic2dArray.enterData(i, j, HSVtoRGB(hue, saturation, value)) ;
             
         }
     }
 }
 
 
-// Sets value to textBoxes containing info on X,Y,size
+// Sets value to text containing info on X,Y,size
 void set_X_Y_size(sf::Text &cordX ,
                   sf::Text &cordY ,
                   sf::Text &sizeS ,
@@ -195,7 +193,7 @@ int main() {
     sf::RectangleShape line ;
     line.setPosition(SIZE, 0) ;
     line.setSize(sf::Vector2f(10, SIZE)) ;
-    line.setFillColor(sf::Color::Black) ; // Off-white color
+    line.setFillColor(sf::Color::Black) ; // Off-white/grey color
     
     
 //    History of View Data
@@ -210,7 +208,12 @@ int main() {
 //    Undo button
     Button undo("Undo", {200,60}, 40, sf::Color::White, sf::Color::Black) ;
     undo.setFont(monaco) ;
-    undo.setPosition({2300, 320}) ;
+    undo.setPosition({2250, 320}) ;
+    
+//    Redo button
+    Button redo("Redo", {200,60}, 40, sf::Color::White, sf::Color::Black) ;
+    redo.setFont(monaco) ;
+    redo.setPosition({2450, 320}) ;
     
 //    to change Zoom In Factor
     Textbox zoomInText(40, sf::Color::Black, false, "Zoom in factor : ", to_string(ZOOM_IN_FACTOR)) ;
@@ -249,6 +252,8 @@ int main() {
     store_pixel_data(X, Y, size) ;
     
     
+//    Drawing the window ************************
+    
     window.clear() ;
     
     window.draw(background) ;
@@ -266,6 +271,7 @@ int main() {
     
     home.drawTo(window) ;
     undo.drawTo(window) ;
+    redo.drawTo(window) ;
     
     window.draw(cordX) ;
     window.draw(cordY) ;
@@ -274,6 +280,8 @@ int main() {
     draw_image(window) ;
     
     window.display() ;
+    
+//   Drawing the window ************************
     
     
     while(window.isOpen()) {
@@ -284,12 +292,14 @@ int main() {
                 window.close();
             }
             
+//            Text is entered in textboxes
             else if (event.type == sf::Event::TextEntered) {
                 zoomInText.typedOn(event) ;
                 maxIterText.typedOn(event) ;
                 resolutionTxt.typedOn(event) ;
             }
             
+//            Mouse button is pressed
             else if (event.type == sf::Event::MouseButtonPressed) {
                 
                 
@@ -322,7 +332,7 @@ int main() {
                 
 //                Canvas
                 if(mouseX <= SIZE) {
-                    history.enterViewData(X, Y, size) ;
+                    history.enterUndoData(X, Y, size) ;
                     
                     X = mouseX/SIZE * size + X - size/2 ;
                     Y = mouseY/SIZE * size + Y - size/2 ;
@@ -335,7 +345,7 @@ int main() {
                 
 //                Home button
                 else if(home.isClicked(mouseX, mouseY)) {
-                    history.clearViewData() ;
+                    history.clearUndoData() ;
                     
                     X = ORIG_X ;
                     Y = ORIG_Y ;
@@ -348,9 +358,24 @@ int main() {
                 
 //                Undo button
                 else if(undo.isClicked(mouseX, mouseY)) {
-                    if(!history.viewDataSize()) continue ;
+                    if(!history.getUndoDataSize()) continue ;
                     
-                    View_data view_data = history.getViewData();
+                    View_data view_data = history.getUndoData(X, Y, size);
+                
+                    X = view_data.X ;
+                    Y = view_data.Y ;
+                    size = view_data.size ;
+                    
+                    set_X_Y_size(cordX, cordY, sizeS, X, Y, size) ;
+                    
+                    store_pixel_data(X, Y, size) ;
+                }
+                
+//                Redo button
+                else if(redo.isClicked(mouseX, mouseY)) {
+                    if(!history.getRedoDataSize()) continue ;
+                    
+                    View_data view_data = history.getRedoData(X, Y, size);
                 
                     X = view_data.X ;
                     Y = view_data.Y ;
@@ -390,6 +415,7 @@ int main() {
 //                Resolution Button
                 else if(resolutionBtn.isClicked(mouseX, mouseY)) {
                     N = stoi(resolutionTxt.getText()) ;
+                    dynamic2dArray.changeSize(N) ;
                     store_pixel_data(X, Y, size) ;
                 }
                 
@@ -400,11 +426,13 @@ int main() {
                 
                 
             }
+            
+//            Some key is pressed
             else if (event.type == sf::Event::KeyPressed) {
                 
-//                Set the home view
+//                Set the home view (H)
                 if(event.key.code == 'h'-'a') {
-                    history.clearViewData() ;
+                    history.clearUndoData() ;
                     
                     X = ORIG_X ;
                     Y = ORIG_Y ;
@@ -415,12 +443,12 @@ int main() {
                     store_pixel_data(X, Y, size) ;
                 }
                 
-                
+//                Undo key (Z)
                 else if(event.key.code == 'z'-'a') {
                     
-                    if(!history.viewDataSize()) continue ;
+                    if(!history.getUndoDataSize()) continue ;
                     
-                    View_data view_data = history.getViewData();
+                    View_data view_data = history.getUndoData(X, Y, size);
                 
                     X = view_data.X ;
                     Y = view_data.Y ;
@@ -430,6 +458,23 @@ int main() {
                     
                     store_pixel_data(X, Y, size) ;
                 }
+                
+//                Redo key (R)
+                else if(event.key.code == 'r'-'a') {
+                    
+                    if(!history.getRedoDataSize()) continue ;
+                    
+                    View_data view_data = history.getRedoData(X, Y, size);
+                
+                    X = view_data.X ;
+                    Y = view_data.Y ;
+                    size = view_data.size ;
+                    
+                    set_X_Y_size(cordX, cordY, sizeS, X, Y, size) ;
+                    
+                    store_pixel_data(X, Y, size) ;
+                }
+                
             }
             
             else {
@@ -437,6 +482,8 @@ int main() {
             }
             
         }
+        
+//        Drawing the window ************************
         
         window.clear() ;
         
@@ -455,6 +502,7 @@ int main() {
         
         home.drawTo(window) ;
         undo.drawTo(window) ;
+        redo.drawTo(window) ;
         
         window.draw(cordX) ;
         window.draw(cordY) ;
@@ -463,6 +511,8 @@ int main() {
         draw_image(window) ;
         
         window.display() ;
+        
+//        Drawing the window ************************
         
     }
 }

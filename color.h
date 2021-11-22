@@ -16,7 +16,7 @@ public:
     double b ;
     
     RGB () {
-        
+        r = g = b = 0 ;
     }
     
     RGB (double r, double g, double b) {
@@ -29,7 +29,7 @@ public:
 
 struct RGB HSVtoRGB(double H, double S,double V){
     if(H>360 || H<0 || S>100 || S<0 || V>100 || V<0){
-        std::cout<<"The givem HSV values are not in valid range"<<std::endl;
+        std::cout<<"The given HSV values are not in valid range"<<std::endl;
         return RGB(0,0,0);
     }
     double s = S/100;
